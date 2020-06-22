@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<os:object-store name="Streamer_object_store" doc:name="Object store" doc:id="ef059b6b-8c84-4558-bc37-ad287e2fe07a" persistent="false" />
+	
+	
+	<configuration-properties doc:name="Configuration properties" doc:id="d336fb17-d975-4e3b-ac51-37d2e0b35d2a" file="config.yaml" />
+	
+	<db:config name="local_mysql_config" doc:name="Database Config" doc:id="f947267b-584a-4345-b3b7-8fa4ec472872" >
+		<db:my-sql-connection host="${db.host}" port="${db.port}" user="${db.user}" password="${db.password}" database="${db.schema}" >
+			<db:connection-properties >
+				<db:connection-property key="serverTimezone" value="UTC" />
+			</db:connection-properties>
+		</db:my-sql-connection>
+	</db:config>
+	
+	
+	
+	<vm:config name="event_vmq_config" doc:name="VM Config" doc:id="8b99a076-b7a7-4757-8338-398e044ee477">	
+		<vm:connection />
+		<vm:queues >
+			<vm:queue queueName="time_window_queue" queueType="PERSISTENT"/>
+		</vm:queues>
+	</vm:config>
+	</mule>

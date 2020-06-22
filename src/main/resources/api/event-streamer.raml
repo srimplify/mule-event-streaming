@@ -1,0 +1,41 @@
+#%RAML 1.0
+title: Event Streamer
+version: 1.0
+
+
+/rewind:
+    get:
+      displayName: Initialize streamer
+      queryParameters:
+        sec:
+          description: Rewind/replay by seconds
+          type: number
+        min:
+          description: Rewind/replay by minutes
+          type: number
+      responses:
+        200:
+          body:
+            application/json:
+
+
+/toggle:
+    get:
+      displayName: Set streamer on/off
+
+      responses:
+        200:
+          description: Returns current status
+          body:
+            application/json:
+
+
+/state:
+    get:
+      displayName: Get current state info
+
+      responses:
+        200:
+          body:
+            application/json:
+

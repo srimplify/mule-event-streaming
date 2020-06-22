@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- <mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ -->	
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	
+	
+<flow name="toggle-streamer" doc:id="132beb07-5ea8-4253-bfc9-4429de99df31">
+		<scripting:execute doc:name="stop-start-scheduler" doc:id="403555ec-4778-45b8-8432-d37f821b61d5" engine="groovy" target="sRunState">
+			<scripting:code >flow = registry.lookupByName(&quot;streamer-scheduler&quot;).get();
+if (flow.isStarted())
+	flow.stop()
+else 
+	flow.start()
+
+return flow.isStarted();</scripting:code>
+		</scripting:execute>
+		<!-- <os:retrieve doc:name="Retrieve" doc:id="ce836372-6a77-47fa-a966-bc6456ecef0e" key="isStreamerRunning" target="runStatus" objectStore="Streamer_object_store">
+			<os:default-value ><![CDATA[#[{
+	state: false as Boolean
+
+	}]]]></os:default-value>
+		</os:retrieve>
+		<os:store doc:name="Store" doc:id="171faa62-d4f0-46f0-8caa-8f9880c3778c" key="isStreamerRunning" objectStore="Streamer_object_store">
+			<os:value ><![CDATA[#[{
+	state: if (vars.runStatus.state) false else true	
+}]]]></os:value>
+		</os:store>
+		<os:retrieve doc:name="Retrieve" doc:id="025c4b0d-f0c2-41fb-b39e-d5417fce96ab" key="isStreamerRunning" objectStore="Streamer_object_store" target="rState"/> -->
+		<os:store doc:name="Store current state" doc:id="c34bb3c5-41cd-43a4-affc-7e57e4d8c693" key="key_runState" objectStore="Streamer_object_store">
+			<os:value><![CDATA[#[vars.sRunState]]]></os:value>
+		</os:store>
+		<logger level="INFO" doc:name="Logger" doc:id="e2b8ef4c-38d3-4576-87e3-b7961aede7fa" message='#[" -----&gt; Streamer run status: " ++ vars.sRunState        //vars.rState.state as Boolean]'/>
+		<ee:transform doc:name="Transform - sent state as response" doc:id="4f9281fe-2290-4928-8f70-f23654d5d557" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"state": vars.sRunState
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="streamer-rewind" doc:id="d996f1d4-a5d7-46bd-8ee3-0a384688580b" >
+		<set-variable value="#[message.attributes.queryParams.min as Number default 0]" doc:name="Set min" doc:id="349ba837-fe0a-43f9-b1da-b44794cabb60" variableName="min"/>
+		<set-variable value="#[message.attributes.queryParams.sec as Number default 0]" doc:name="Set seconds" doc:id="4a737c17-da40-42fe-8222-2582ee7c5be8" variableName="sec"/>
+		<os:store doc:name="Update t1 " doc:id="98cd7204-37a4-498b-a98b-f7fc5d7926ef" key="lastPoll1" objectStore="Streamer_object_store">
+			<os:value ><![CDATA[#[(now() - "PT$(vars.min)M$(vars.sec)S" as Period) as LocalDateTime {format: "yyyy-MM-dd HH:mm:ss.SSS"}]]]></os:value>
+		</os:store>
+		<os:retrieve doc:name="Retrieve t1" doc:id="b95d9760-057f-441f-b741-235c62dd5d6b" key="lastPoll1" objectStore="Streamer_object_store" target="r_lastStartTime"/>
+		<logger level="INFO" doc:name="Logger" doc:id="01155386-f592-465f-a852-3a11bf3bdd4a" message='#[" -----&gt; Replaying last min:sec = " ++ vars.min ++ ":" ++ vars.sec]'/>
+		<ee:transform doc:name="Transform Message" doc:id="498cda3d-de2f-4f87-b5a9-994560be04eb" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	start_time: vars.r_lastStartTime as String
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="state" doc:id="0606a775-3c9c-4da2-a70e-f98d11cc6293" >
+		<os:retrieve doc:name="Retrieve t1" doc:id="e27316bc-6cd6-41f4-9cab-8f19153f95c4" key="lastPoll1" objectStore="Streamer_object_store" target="rlastStartTime">
+			<os:default-value ><![CDATA[#["not-set"]]]></os:default-value>
+		</os:retrieve>
+		<os:retrieve doc:name="Retrieve run state" doc:id="c751abaf-ad54-4b1b-a1ee-b0ae3712dfc9" key="key_runState" objectStore="Streamer_object_store" target="r_schState">
+			<os:default-value ><![CDATA[#[false]]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="Transform Message" doc:id="600b4b0e-5746-497d-9211-59ca189c491f" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	scheduler_state: vars.r_schState,
+	last_query_start_time: vars.rlastStartTime as String
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	
+	
+	
+	
+	
+	
+	
+	
+</mule>

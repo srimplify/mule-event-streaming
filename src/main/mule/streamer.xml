@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+	
+	
+	
+<flow name="streamer-scheduler" doc:id="6dded7a1-7b10-445f-9cab-e47458b95cb4" maxConcurrency="1" initialState="stopped">
+		<scheduler doc:name="Scheduler - 100ms" doc:id="cdf1b333-dc2c-4647-a7c0-e8fc9406d172">
+			<scheduling-strategy>
+				<fixed-frequency startDelay="10" frequency="100" />
+			</scheduling-strategy>
+		</scheduler>
+		<flow-ref doc:name="Publish time window to VMQ" doc:id="d7049eda-922b-4796-97bb-eb450c6ed514" name="publish-time-window-to-vmq" />
+	</flow>
+	<flow name="publish-time-window-to-vmq" doc:id="f99f7dc6-53f9-4ba8-90dc-3eeb2a9f09a4" maxConcurrency="1">
+		<os:retrieve doc:name="Last poll time" doc:id="7dce2d89-4153-41f3-941b-46e5b6fe41f5" key="lastPoll1" target="lastPoll_t2FromOS" objectStore="Streamer_object_store">
+			<os:default-value><![CDATA[#[now() as LocalDateTime {format: "yyyy-MM-dd HH:mm:ss.SSS"}]]]></os:default-value>
+		</os:retrieve>
+		<db:select doc:name="Current DB timestamp" doc:id="8c8168c2-2db8-406d-bbd0-2eba57bfd79c" config-ref="local_mysql_config" target="currentTimeFromDB" targetValue="#[payload[0].dbtime]">
+			<db:sql>SELECT LOCALTIMESTAMP(3) as dbtime from Dual
+</db:sql>
+		</db:select>
+		<os:store doc:name="Store new to time" doc:id="aa9724bd-7521-4e16-8aab-70981aa3a91a" key="lastPoll1" objectStore="Streamer_object_store">
+			<os:value><![CDATA[#[vars.currentTimeFromDB as LocalDateTime {format: "yyyy-MM-dd HH:mm:ss.SSS"}]]]></os:value>
+
+		</os:store>
+		<vm:publish doc:name="Publish from and to time window" doc:id="1ee530cd-56ce-46c0-94ec-6e071267f811" config-ref="event_vmq_config" queueName="time_window_queue">
+					<vm:content><![CDATA[#[%dw 2.0 output application/java ---
+{	
+	from: (vars.lastPoll_t2FromOS as LocalDateTime {format: "yyyy-MM-dd HH:mm:ss.SSS"}),
+	to: vars.currentTimeFromDB as LocalDateTime {format: "yyyy-MM-dd HH:mm:ss.SSS"}
+	
+	//from: (vars.lastPoll1FromOS as LocalDateTime) + |PT5H|,
+	//to: (vars.dbtime as LocalDateTime) + |PT5H|
+}]]]></vm:content>
+			
+				</vm:publish>
+		<logger level="INFO" doc:name="Logger" doc:id="5921fa78-9f5f-471c-a156-f1b90fd6ccfd" message='#["Fetch window -----&gt; from: " ++ vars.lastPoll_t2FromOS as String ++ "; to: " ++ (vars.currentTimeFromDB as String)]' />
+	</flow>
+	<flow name="vmq-listener-to-fetch-events" doc:id="10400c29-c02d-4dbc-94fc-ecb019e8ae02">
+		<vm:listener queueName="time_window_queue" doc:name="Listener" doc:id="bc4a5707-bb0c-4fa4-b16a-56f623a64f16" config-ref="event_vmq_config" numberOfConsumers="5"/>
+		<ee:transform doc:name="Set from and to timestamps" doc:id="620d2344-8719-4f5b-a1a6-7afecda88bd7" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="fromTimeStamp" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.from
+]]></ee:set-variable>
+				<ee:set-variable variableName="toTimeStamp" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.to]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:select doc:name="Fetch event records from {t0, t1}, and so on" doc:id="aef636df-4728-4cfa-88c1-4acb34b10773" config-ref="local_mysql_config">
+			<db:sql >#[&quot;SELECT event_id, location_id, sku, quantity, update_time FROM EVENTS WHERE update_time   &gt;= :f AND update_time &lt; :t&quot; ]</db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	f: vars.fromTimeStamp as String,
+	t: vars.toTimeStamp as String
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="8425879b-8766-4a24-ac53-0bffed98bd51" >
+			<when expression="#[sizeOf(payload) &gt; 0]">
+				<ee:transform doc:name="Transform event payload" doc:id="51bdc4d6-c924-4b64-8bee-c22af33705b3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<logger level="INFO" doc:name="Send payload to event consumer" doc:id="42e78d09-253e-4e24-9191-4afd1555078f" message='#[output application/json ---
+" -----&gt; Retrieved from:[" ++ 
+	vars.fromTimeStamp ++ "]; to:[" ++ vars.toTimeStamp ++ "]; db-window: [" ++ 
+	(vars.toTimeStamp - vars.fromTimeStamp) ++ "] --&gt; Number of events " ++ sizeOf(payload)]'/>
+				<logger level="INFO" doc:name="Logger" doc:id="511fcd02-2f53-4f15-9e6f-8c5401abafa0" message='#["Send payload to desination - e.g. GCP Pub/Sub, data warehouse, etc."]'/>
+			</when>
+			<otherwise >
+				<logger level="DEBUG" doc:name="Logger" doc:id="8899a4b0-0330-4bf6-b3c5-ffe94a53cf88" message='#[" -----&gt; No events available"]'/>
+			</otherwise>
+		</choice>
+	</flow>
+	
+
+
+		
+</mule>
