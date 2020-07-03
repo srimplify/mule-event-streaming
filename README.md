@@ -2,6 +2,8 @@
 Event streaming with MuleSoft 
 
 Events are everywhere -- order placed, stocks traded, health condition reported, temperature threshold reached, and so on. Event streaming is “continuous” transmission and/or real-time processing of events as it is generated for making time critical decisions. 
+
+See [link to DZone article](https://dzone.com/articles/event-streaming-with-mulesoft) for full write-up.
 	
 At a high-level there are three steps in event processing: 
  - generation (source/producer)
